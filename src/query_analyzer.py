@@ -679,6 +679,203 @@ def analisar_pergunta(
         texto
     )
 
+    # ========================================================
+    # AJUSTES CONTEXTUAIS PARA CONSULTAS COMPLEXAS
+    # ========================================================
+    #
+    # Alguns termos podem descrever o conteúdo da pergunta
+    # sem significar que a recuperação deva ficar limitada
+    # a um único doc_type.
+    #
+    # Exemplo:
+    # "analise o e-mail e determine o reembolso"
+    # precisa recuperar e-mail + política + cadastro.
+    # ========================================================
+
+    # --------------------------------------------------------
+    # MULTI-HOP: CANCELAMENTO / REEMBOLSO
+    # --------------------------------------------------------
+
+    if (
+        (
+            "reembolso" in texto
+            or "cancelamento" in texto
+        )
+        and (
+            "e-mail" in texto
+            or "email" in texto
+            or "cliente" in texto
+            or "contrato" in texto
+        )
+    ):
+        # A resposta pode depender simultaneamente de
+        # email, policy e customer.
+        #
+        # Também removemos state porque expressões como
+        # "determine se ela..." não podem ser interpretadas
+        # como o estado SE (Sergipe).
+        state = None
+        module = None
+        doc_type = None
+
+    # --------------------------------------------------------
+    # CONSULTAS SOBRE TEF / PINPAD
+    # --------------------------------------------------------
+    #
+    # O domínio TEF normalmente pertence ao VendeFácil Pay,
+    # mas nem todas as fontes relevantes possuem module="pay".
+    #
+    # Atas e manuais não estruturados podem possuir module=None.
+    # Por isso a estratégia varia conforme a intenção:
+    #
+    # 1) reunião / retrospectiva / post-mortem:
+    #       prioriza atas, sem restringir módulo;
+    #
+    # 2) diagnóstico que pede causa + solução/procedimento:
+    #       recuperação heterogênea, permitindo ticket,
+    #       manual, ata, email e logs;
+    #
+    # 3) consulta TEF comum:
+    #       prioriza module="pay".
+    # --------------------------------------------------------
+
+    termos_tef = [
+        "tef",
+        "pinpad",
+        "porta 6090",
+        "tcp 6090",
+        "pay-504",
+        "timeout de confirmacao",
+        "timeout de comunicacao",
+    ]
+
+    consulta_tef = (
+        any(
+            termo in texto
+            for termo in termos_tef
+        )
+        or re.search(
+            r"\bpay-\d+\b",
+            texto
+        )
+    )
+
+    if consulta_tef:
+
+        intencao_reuniao = any(
+            termo in texto
+            for termo in [
+                "reuniao",
+                "retrospectiva",
+                "post-mortem",
+                "post mortem",
+                "decisoes aprovadas",
+                "acoes aprovadas",
+                "incidente de queda",
+            ]
+        )
+
+        intencao_diagnostico = any(
+            termo in texto
+            for termo in [
+                "por que",
+                "causa",
+                "causa raiz",
+                "procedimento",
+                "solucao",
+                "resolver",
+                "resolucao",
+                "correcao",
+                "como corrigir",
+            ]
+        )
+
+        if intencao_reuniao:
+            module = None
+            doc_type = "ata"
+
+        elif intencao_diagnostico:
+            # Diagnósticos técnicos podem exigir múltiplas fontes:
+            # ticket + manual + ata + log.
+            module = None
+            doc_type = None
+
+        else:
+            module = "pay"
+            doc_type = None
+
+    # --------------------------------------------------------
+    # CONSULTAS PROCEDIMENTAIS EM MANUAIS
+    # --------------------------------------------------------
+    #
+    # Alguns documentos não estruturados possuem module=None.
+    # Portanto, quando a pergunta pede explicitamente um
+    # procedimento/regra operacional documentada, é mais seguro
+    # priorizar doc_type=manual sem exigir module.
+    #
+    # Isso evita excluir manuais apenas porque termos como
+    # "PDV", "Loja" ou "Estoque" aparecem na pergunta.
+    # --------------------------------------------------------
+
+    intencao_procedimental = any(
+        expressao in texto
+        for expressao in [
+            "como realizar",
+            "como deve ser realizado",
+            "como deve ser realizada",
+            "passo a passo",
+            "procedimento",
+            "qual e a regra",
+            "qual a regra",
+        ]
+    )
+
+    assunto_manual = any(
+        termo in texto
+        for termo in [
+            "sangria",
+            "suprimento",
+            "safety stock",
+            "estoque de seguranca",
+            "margem de seguranca",
+        ]
+    )
+
+    if (
+        intencao_procedimental
+        and assunto_manual
+    ):
+        module = None
+        doc_type = "manual"
+
+    # --------------------------------------------------------
+    # CONSULTAS ANALÍTICAS SOBRE MRR
+    # --------------------------------------------------------
+
+    if (
+        "mrr" in texto
+        or "receita recorrente mensal" in texto
+    ):
+        # customers.csv contém MRR e main_product.
+        # Portanto "produto" na pergunta não deve
+        # transformar a consulta em doc_type=product.
+        doc_type = "customer"
+        module = None
+
+    # --------------------------------------------------------
+    # ERROS TÉCNICOS DE SINCRONIZAÇÃO DE ESTOQUE
+    # --------------------------------------------------------
+
+    if (
+        re.search(r"\bstk-\d+\b", texto)
+        or "conflict during inventory sync" in texto
+    ):
+        module = None
+
+        # O procedimento de solução está na documentação,
+        # não em cadastro de loja.
+        doc_type = "manual"
+
     # --------------------------------------------------------
     # CONSULTAS GENÉRICAS SOBRE CUSTOMER_ID
     # --------------------------------------------------------

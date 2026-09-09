@@ -1,5 +1,7 @@
 
 import os
+import re
+from difflib import SequenceMatcher
 from typing import Callable, Optional
 
 from pydantic import ValidationError
@@ -17,15 +19,25 @@ from src.guardrails import (
 # CONFIGURAÇÃO DO LLM
 # ============================================================
 
-MODELO_LLM = "openai/gpt-oss-120b"
+MODELO_LLM = "openai/gpt-oss-20b"
 
 llm = ChatGroq(
     model=MODELO_LLM,
     temperature=0,
 )
 
+# Usa Structured Outputs nativo do Groq em vez de
+# function calling. Isso evita erros como:
+#
+# - functions.RAGResponse
+# - malformed tool-call JSON
+# - Failed to parse tool call arguments
+#
+# O modelo openai/gpt-oss-20b suporta JSON Schema nativamente.
 llm_estruturado = llm.with_structured_output(
-    RAGResponse
+    RAGResponse,
+    method="json_schema",
+    strict=True,
 )
 
 
@@ -65,8 +77,8 @@ def obter_chunk_id(doc) -> str:
 
 def gerar_citacoes_autorizadas(
     doc,
-    tamanho: int = 280,
-    sobreposicao: int = 60,
+    tamanho: int = 220,
+    sobreposicao: int = 40,
 ) -> list[str]:
     """
     Divide o conteúdo do documento em trechos literais menores.
@@ -358,6 +370,263 @@ def validar_com_retry(
 
 
 # ============================================================
+# CORREÇÃO DETERMINÍSTICA DE QUOTATION
+# ============================================================
+
+def encontrar_trecho_literal_mais_proximo(
+    quotation: str,
+    conteudo: str,
+    limite: int = 500,
+):
+    """
+    Procura, dentro do próprio chunk recuperado, o trecho literal
+    mais semelhante à quotation produzida pelo LLM.
+
+    A função NÃO cria nem parafraseia evidências.
+    O valor retornado sempre é substring literal do documento.
+
+    Estratégia:
+    1. tenta correspondência exata;
+    2. tenta diferença apenas de espaços;
+    3. compara linhas/parágrafos literais;
+    4. compara janelas de sentenças;
+    """
+
+    quotation = str(
+        quotation or ""
+    ).strip()
+
+    conteudo = str(
+        conteudo or ""
+    )
+
+    if not quotation or not conteudo:
+        return None
+
+    # --------------------------------------------------------
+    # 1. EXATO
+    # --------------------------------------------------------
+
+    if quotation in conteudo:
+        return quotation
+
+    # --------------------------------------------------------
+    # 2. APENAS ESPAÇOS / QUEBRAS DE LINHA
+    # --------------------------------------------------------
+
+    tokens = quotation.split()
+
+    if tokens:
+
+        padrao = r"\s+".join(
+            re.escape(token)
+            for token in tokens
+        )
+
+        correspondencia = re.search(
+            padrao,
+            conteudo,
+            flags=re.DOTALL
+        )
+
+        if correspondencia:
+
+            trecho = correspondencia.group(
+                0
+            ).strip()
+
+            if len(trecho) <= limite:
+                return trecho
+
+    # --------------------------------------------------------
+    # NORMALIZAÇÃO APENAS PARA COMPARAR
+    # --------------------------------------------------------
+
+    def normalizar_comparacao(valor: str) -> str:
+
+        valor = str(valor)
+
+        # Markdown não altera conteúdo semântico.
+        valor = valor.replace(
+            "**",
+            ""
+        )
+
+        valor = valor.replace(
+            "__",
+            ""
+        )
+
+        valor = valor.replace(
+            "`",
+            ""
+        )
+
+        valor = re.sub(
+            r"\s+",
+            " ",
+            valor
+        )
+
+        return valor.strip().lower()
+
+    quotation_normalizada = (
+        normalizar_comparacao(
+            quotation
+        )
+    )
+
+    # --------------------------------------------------------
+    # 3. CANDIDATOS LITERAIS
+    # --------------------------------------------------------
+
+    candidatos = []
+
+    # Parágrafos / linhas
+    blocos = re.split(
+        r"\n\s*\n|\n",
+        conteudo
+    )
+
+    for bloco in blocos:
+
+        bloco = bloco.strip()
+
+        if (
+            bloco
+            and len(bloco) <= limite
+        ):
+            candidatos.append(
+                bloco
+            )
+
+    # Sentenças
+    sentencas = re.split(
+        r"(?<=[.!?;:])\s+",
+        conteudo
+    )
+
+    sentencas = [
+        s.strip()
+        for s in sentencas
+        if s.strip()
+    ]
+
+    for i, sentenca in enumerate(
+        sentencas
+    ):
+
+        if len(sentenca) <= limite:
+            candidatos.append(
+                sentenca
+            )
+
+        # Janelas de 2 e 3 sentenças
+        for tamanho in (2, 3):
+
+            janela = " ".join(
+                sentencas[
+                    i:i + tamanho
+                ]
+            ).strip()
+
+            if (
+                janela
+                and len(janela) <= limite
+                and janela in conteudo
+            ):
+                candidatos.append(
+                    janela
+                )
+
+    # Remove duplicados sem mudar ordem
+    candidatos_unicos = []
+
+    vistos = set()
+
+    for candidato in candidatos:
+
+        if candidato not in vistos:
+
+            vistos.add(
+                candidato
+            )
+
+            candidatos_unicos.append(
+                candidato
+            )
+
+    # --------------------------------------------------------
+    # 4. MELHOR CORRESPONDÊNCIA
+    # --------------------------------------------------------
+
+    melhor_trecho = None
+    melhor_score = 0.0
+
+    for candidato in candidatos_unicos:
+
+        candidato_normalizado = (
+            normalizar_comparacao(
+                candidato
+            )
+        )
+
+        if not candidato_normalizado:
+            continue
+
+        score = SequenceMatcher(
+            None,
+            quotation_normalizada,
+            candidato_normalizado
+        ).ratio()
+
+        # Também considera sobreposição de palavras.
+        palavras_q = set(
+            quotation_normalizada.split()
+        )
+
+        palavras_c = set(
+            candidato_normalizado.split()
+        )
+
+        if palavras_q:
+
+            sobreposicao = (
+                len(
+                    palavras_q
+                    & palavras_c
+                )
+                / len(palavras_q)
+            )
+
+        else:
+            sobreposicao = 0.0
+
+        score_final = max(
+            score,
+            sobreposicao
+        )
+
+        if score_final > melhor_score:
+
+            melhor_score = score_final
+            melhor_trecho = candidato
+
+    # --------------------------------------------------------
+    # LIMIAR CONSERVADOR
+    # --------------------------------------------------------
+
+    if (
+        melhor_trecho
+        and melhor_score >= 0.55
+        and melhor_trecho in conteudo
+    ):
+        return melhor_trecho
+
+    return None
+
+
+# ============================================================
 # VALIDAÇÃO DE EVIDÊNCIAS
 # ============================================================
 
@@ -423,11 +692,28 @@ def validar_evidencias_da_resposta(
             )
 
         if quotation not in doc.page_content:
-            raise ValueError(
-                f"A quotation do chunk "
-                f"{evidencia.chunk_id} "
-                "não é um trecho literal do documento."
+
+            trecho_literal = (
+                encontrar_trecho_literal_mais_proximo(
+                    quotation=quotation,
+                    conteudo=doc.page_content,
+                    limite=500,
+                )
             )
+
+            if trecho_literal is None:
+
+                raise ValueError(
+                    f"A quotation do chunk "
+                    f"{evidencia.chunk_id} "
+                    "não corresponde de forma segura a um "
+                    "trecho literal do documento."
+                )
+
+            # O objeto final passa a guardar exatamente
+            # o trecho existente no documento.
+            evidencia.quotation = trecho_literal
+            quotation = trecho_literal
 
         # A citação não pode expor dados que deveriam
         # ser recusados ou mascarados.
@@ -505,10 +791,18 @@ REGRAS OBRIGATÓRIAS:
 
 7. NÃO crie uma quotation por conta própria.
 
-8. Use quotation com no máximo 500 caracteres.
+8. REGRAS RÍGIDAS PARA quotation:
+   - cada quotation deve possuir NO MÁXIMO 300 caracteres;
+   - copie EXATAMENTE UMA das "CITAÇÕES LITERAIS AUTORIZADAS";
+   - nunca copie o conteúdo completo de um documento;
+   - nunca junte duas ou mais citações autorizadas em uma única quotation;
+   - nunca ultrapasse 300 caracteres, mesmo que o schema permita até 500.
 
-9. Prefira quotation curta e diretamente relacionada
-   à resposta.
+9. Quando a resposta contiver vários fatos, etapas ou decisões:
+   - utilize várias entradas em sources_used;
+   - é permitido repetir o mesmo filepath e o mesmo chunk_id;
+   - use uma quotation curta para sustentar cada fato;
+   - prefira evidências pequenas e diretamente relacionadas à afirmação.
 
 10. Não inclua nas citações dados pessoais que precisem
     ser mascarados.
@@ -521,6 +815,66 @@ REGRAS OBRIGATÓRIAS:
     - "media": evidência suficiente, mas parcialmente indireta;
     - "baixa": evidência limitada;
     - "recusado": somente para recusas.
+
+13. GROUNDEDNESS É OBRIGATÓRIO:
+    - Cada afirmação factual presente em answer deve estar
+      diretamente sustentada por uma ou mais evidências recuperadas.
+    - Não acrescente conclusões, benefícios, consequências,
+      interpretações ou generalizações que não estejam explicitamente
+      sustentadas pelos documentos.
+
+14. Ao redigir answer:
+    - responda somente o que pode ser demonstrado pelas evidências;
+    - prefira frases objetivas e verificáveis;
+    - não use expressões como "garantindo", "assegurando",
+      "portanto protege", "isso demonstra que" ou semelhantes,
+      salvo quando essa conclusão aparecer claramente na fonte.
+
+15. Antes de finalizar a resposta, verifique mentalmente cada frase:
+    "Existe uma evidência recuperada que sustenta diretamente esta afirmação?"
+    Se a resposta for não, remova ou reformule a afirmação.
+
+16. NÃO transforme intenção, solicitação ou pedido em fato consumado:
+    - Se um documento apenas solicita uma ação, não diga que a empresa executa essa ação.
+    - Se um documento apenas menciona um direito previsto em lei, não diga que o sistema
+      necessariamente cumpre, garante ou confirma esse direito, salvo quando houver
+      evidência explícita disso.
+    - Diferencie claramente "foi solicitado" de "foi realizado".
+
+17. Em perguntas sobre políticas, LGPD ou segurança:
+    - priorize afirmações normativas explicitamente presentes nas políticas recuperadas;
+    - use e-mails, tickets ou solicitações apenas como evidência de que houve aquele pedido
+      ou ocorrência, e não como prova de política ou cumprimento geral.
+
+18. Em perguntas que solicitem solução, procedimento, configuração,
+    correção ou passo a passo:
+    - inclua SOMENTE ações explicitamente descritas nas evidências;
+    - não acrescente etapas comuns de troubleshooting por conhecimento geral;
+    - não acrescente reinicializações, testes, validações, comandos ou verificações
+      se essas ações não estiverem presentes nos documentos recuperados;
+    - se a fonte apresentar apenas uma ação, responda apenas com essa ação.
+
+19. A decisão sobre LGPD da PERGUNTA já foi executada antes desta etapa
+    por um guardrail determinístico.
+    - Não invente uma recusa por LGPD.
+    - Não classifique uma operação empresarial comum como dado pessoal.
+    - Se houver evidência suficiente para uma pergunta operacional legítima,
+      responda normalmente.
+    - Use is_refusal=true apenas quando as evidências forem insuficientes
+      para responder com segurança.
+
+20. Antes de retornar uma resposta normal:
+    - compare cada ação e cada afirmação de answer com o contexto;
+    - remova qualquer detalhe que tenha vindo apenas do seu conhecimento geral;
+    - sources_used deve apontar para os chunks que sustentam efetivamente a resposta.
+
+21. CHECAGEM FINAL OBRIGATÓRIA DE SCHEMA:
+    - examine cada item de sources_used;
+    - confirme que quotation possui no máximo 300 caracteres;
+    - se uma quotation estiver longa, substitua-a por uma CITAÇÃO LITERAL
+      AUTORIZADA menor;
+    - para listas com várias decisões, prefira várias evidências curtas
+      em vez de uma evidência longa.
 
 {feedback}
 

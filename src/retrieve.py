@@ -310,8 +310,20 @@ def buscar_hibrido(
         ↓
     RRF
         ↓
+    expansão contextual de atas fragmentadas
+        ↓
     ranking final
+
+    A expansão contextual preserva os k resultados principais
+    do RRF e, quando a pergunta solicita conteúdo global de uma
+    reunião/retrospectiva, acrescenta chunks do mesmo documento.
+
+    Isso evita perder informações que estejam em seções posteriores
+    de uma ata dividida em múltiplos chunks.
     """
+
+    import re
+    import unicodedata
 
     # --------------------------------------------------------
     # FILTROS
@@ -359,12 +371,184 @@ def buscar_hibrido(
         k=60
     )
 
+    ranking_principal = ranking_final[:k]
+
+    # ========================================================
+    # EXPANSÃO CONTEXTUAL DE DOCUMENTOS FRAGMENTADOS
+    # ========================================================
+    #
+    # Algumas atas possuem:
+    #
+    # arquivo_md_0000 -> título / participantes
+    # arquivo_md_0001 -> resumo
+    # arquivo_md_0002 -> causa
+    # arquivo_md_0003 -> decisões
+    #
+    # O embedding pode recuperar corretamente o documento,
+    # porém apenas o primeiro chunk. Para perguntas que pedem
+    # decisões, ações ou conteúdo de uma retrospectiva/reunião,
+    # acrescentamos os demais chunks da mesma ata.
+    #
+    # Os resultados principais NÃO são substituídos.
+    # A expansão é acrescentada depois deles.
+    # ========================================================
+
+    def normalizar_local(valor: str) -> str:
+
+        valor = str(
+            valor or ""
+        ).lower()
+
+        valor = unicodedata.normalize(
+            "NFD",
+            valor
+        )
+
+        valor = "".join(
+            c
+            for c in valor
+            if unicodedata.category(c) != "Mn"
+        )
+
+        return valor
+
+    texto_pergunta = normalizar_local(
+        pergunta
+    )
+
+    intencao_documento_completo = any(
+        termo in texto_pergunta
+        for termo in [
+            "reuniao",
+            "retrospectiva",
+            "post-mortem",
+            "post mortem",
+            "decisoes",
+            "acoes aprovadas",
+            "decisoes aprovadas",
+            "ata",
+        ]
+    )
+
+    ranking_expandido = list(
+        ranking_principal
+    )
+
+    ids_presentes = {
+        doc.metadata.get("chunk_id")
+        for doc, _ in ranking_expandido
+    }
+
+    if intencao_documento_completo:
+
+        # Fontes de atas que já apareceram entre os resultados
+        # principais.
+        fontes_atas = []
+
+        for doc, score in ranking_principal:
+
+            if (
+                doc.metadata.get("doc_type")
+                == "ata"
+            ):
+
+                source_file = doc.metadata.get(
+                    "source_file"
+                )
+
+                if (
+                    source_file
+                    and source_file not in fontes_atas
+                ):
+                    fontes_atas.append(
+                        source_file
+                    )
+
+        # Expande prioritariamente a primeira ata recuperada,
+        # que representa o documento mais relevante segundo RRF.
+        if fontes_atas:
+
+            fonte_principal = fontes_atas[0]
+
+            chunks_mesma_ata = [
+                doc
+                for doc in documentos
+                if (
+                    doc.metadata.get("source_file")
+                    == fonte_principal
+                    and doc.metadata.get("doc_type")
+                    == "ata"
+                )
+            ]
+
+            # Ordenação natural pelo sufixo numérico do chunk.
+            def numero_chunk(doc):
+
+                chunk_id = str(
+                    doc.metadata.get(
+                        "chunk_id",
+                        ""
+                    )
+                )
+
+                match = re.search(
+                    r"_(\\d+)$",
+                    chunk_id
+                )
+
+                if match:
+                    return int(
+                        match.group(1)
+                    )
+
+                return 999999
+
+            chunks_mesma_ata.sort(
+                key=numero_chunk
+            )
+
+            # Limite pequeno para não inflar excessivamente
+            # o contexto da geração.
+            limite_extra = 4
+            adicionados = 0
+
+            for doc in chunks_mesma_ata:
+
+                chunk_id = doc.metadata.get(
+                    "chunk_id"
+                )
+
+                if chunk_id in ids_presentes:
+                    continue
+
+                # Score de expansão deliberadamente inferior
+                # aos scores obtidos pelo RRF. Ele serve apenas
+                # para manter compatibilidade com a estrutura
+                # (Document, score).
+                score_expansao = 0.0
+
+                ranking_expandido.append(
+                    (
+                        doc,
+                        score_expansao
+                    )
+                )
+
+                ids_presentes.add(
+                    chunk_id
+                )
+
+                adicionados += 1
+
+                if adicionados >= limite_extra:
+                    break
+
     return {
         "pergunta": pergunta,
         "filtros": filtros,
         "dense": resultados_densos,
         "bm25": resultados_esparsos,
-        "rrf": ranking_final[:k],
+        "rrf": ranking_expandido,
     }
 
 
