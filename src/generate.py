@@ -876,6 +876,29 @@ REGRAS OBRIGATÓRIAS:
     - para listas com várias decisões, prefira várias evidências curtas
       em vez de uma evidência longa.
 
+
+22. COMPLETUDE EM PERGUNTAS PROCEDIMENTAIS:
+    - se a pergunta pedir "como", "como fazer", "como realizar",
+      "procedimento", "passo a passo", "configuração", "solução"
+      ou instruções operacionais, responda com o procedimento completo
+      que estiver explicitamente presente nas evidências;
+    - se o contexto apresentar uma lista numerada ou sequência de etapas,
+      preserve TODAS as etapas relevantes e a ordem original;
+    - não substitua um passo a passo disponível por apenas uma definição,
+      explicação geral ou resumo parcial;
+    - não omita atalhos, menus, campos, autenticações, confirmações,
+      saídas ou ações finais quando eles estiverem explicitamente
+      documentados e forem necessários para executar o procedimento;
+    - não acrescente etapas que não estejam nas evidências.
+
+23. EVIDÊNCIAS PARA PROCEDIMENTOS:
+    - quando a resposta possuir várias etapas, sources_used deve conter
+      evidências suficientes para sustentar o procedimento apresentado;
+    - podem existir várias entradas em sources_used apontando para o
+      mesmo chunk_id;
+    - prefira quotations curtas que cubram diferentes partes do
+      procedimento, em vez de uma única citação genérica.
+
 {feedback}
 
 PERGUNTA:

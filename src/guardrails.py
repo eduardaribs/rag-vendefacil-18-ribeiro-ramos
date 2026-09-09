@@ -326,3 +326,238 @@ def aplicar_guardrails_lgpd(texto: str) -> dict:
         ),
         "resposta_segura": texto_mascarado
     }
+
+
+# === PATCH CREDENCIAIS ETAPA 4 ===
+# Diferencia:
+#   1) instrução procedural que apenas menciona autenticação;
+#   2) solicitação de segredo;
+#   3) exposição de segredo real.
+
+_aplicar_guardrails_lgpd_base = aplicar_guardrails_lgpd
+
+
+def _normalizar_credencial(texto: str) -> str:
+    import unicodedata
+
+    texto = str(texto or "")
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+    )
+
+    return texto.lower().strip()
+
+
+def _pedido_explicito_credencial(texto: str) -> bool:
+    """
+    Detecta quando alguém está pedindo o VALOR de uma credencial.
+    Exemplos:
+      - qual é a senha?
+      - me informe a API key
+      - forneça o token JWT
+    """
+    import re
+
+    t = _normalizar_credencial(texto)
+
+    credencial = (
+        r"(?:"
+        r"senha|password|"
+        r"api\s*key|chave\s*(?:de|da)?\s*api|"
+        r"token(?:\s+jwt)?|jwt(?:\s+secret)?|"
+        r"secret(?:\s+key)?|client\s+secret"
+        r")"
+    )
+
+    padroes = [
+        rf"\bqual(?:\s+e|\s+eh)?\s+(?:a|o)?\s*{credencial}\b",
+
+        rf"\b(?:me\s+)?"
+        rf"(?:informe|forneca|revele|mostre|diga|envie|passe)"
+        rf"\s+(?:a|o)?\s*{credencial}\b",
+
+        rf"\bpreciso\s+(?:da|do|de)\s+{credencial}\b",
+
+        rf"\bquero\s+(?:a|o)?\s*{credencial}\b",
+
+        rf"\bdescubra\s+(?:a|o)?\s*{credencial}\b",
+    ]
+
+    return any(
+        re.search(p, t, flags=re.IGNORECASE)
+        for p in padroes
+    )
+
+
+def _exposicao_credencial(texto: str) -> bool:
+    """
+    Detecta texto que contém uma credencial seguida de um valor.
+
+    Exemplos:
+      - senha do admin = admin123
+      - API key: sk-xxxxx
+      - token JWT é abc123xyz
+    """
+    import re
+
+    t = _normalizar_credencial(texto)
+
+    credencial = (
+        r"(?:"
+        r"senha|password|"
+        r"api\s*key|chave\s*(?:de|da)?\s*api|"
+        r"token(?:\s+jwt)?|jwt(?:\s+secret)?|"
+        r"secret(?:\s+key)?|client\s+secret"
+        r")"
+    )
+
+    # Permite algumas palavras entre o nome da credencial e o separador.
+    # Ex.: "senha do administrador é admin123"
+    padrao_valor = (
+        rf"\b{credencial}\b"
+        rf"(?:\s+(?:do|da|de|para|producao|administrador|admin|sistema|cliente))*"
+        rf"\s*(?:=|:|\be\b|\beh\b)"
+        rf"\s*[\"']?"
+        rf"[a-zA-Z0-9_\-./+=]{{4,}}"
+    )
+
+    if re.search(
+        padrao_valor,
+        t,
+        flags=re.IGNORECASE
+    ):
+        return True
+
+    # Formatos típicos de segredos técnicos
+    formatos_secretos = [
+        r"\bsk-[a-zA-Z0-9_\-]{8,}\b",
+        r"\bghp_[a-zA-Z0-9]{8,}\b",
+        r"\bAIza[a-zA-Z0-9_\-]{10,}\b",
+        r"\beyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\b",
+    ]
+
+    return any(
+        re.search(p, texto)
+        for p in formatos_secretos
+    )
+
+
+def _mencao_procedural_de_senha(texto: str) -> bool:
+    """
+    Detecta instruções legítimas em que 'senha' representa apenas
+    um requisito de autenticação e nenhum valor secreto é divulgado.
+
+    Exemplos:
+      - Insira a senha do supervisor.
+      - Digite a senha do gerente.
+      - O sistema solicita a senha do operador.
+    """
+    import re
+
+    t = _normalizar_credencial(texto)
+
+    if "senha" not in t and "password" not in t:
+        return False
+
+    if _pedido_explicito_credencial(texto):
+        return False
+
+    if _exposicao_credencial(texto):
+        return False
+
+    padroes = [
+        r"\b(?:insira|digite|utilize|use)\s+(?:a\s+)?senha\b",
+        r"\bsistema\s+(?:solicita|exige|pedira|pede)\s+(?:a\s+)?senha\b",
+        r"\bsenha\s+(?:do|da)\s+(?:supervisor|gerente|operador)\b",
+        r"\bautenticacao\s+(?:do|da)\s+(?:supervisor|gerente|operador)\b",
+    ]
+
+    return any(
+        re.search(p, t)
+        for p in padroes
+    )
+
+
+def aplicar_guardrails_lgpd(texto: str):
+    """
+    Camada refinada de proteção de credenciais.
+
+    Regra:
+      - pedido pelo VALOR de segredo -> recusa;
+      - exposição de segredo -> recusa;
+      - simples instrução de autenticação -> permitida;
+      - demais dados continuam sob o guardrail original.
+    """
+
+    original = str(texto or "")
+
+    # --------------------------------------------------------
+    # 1. Solicitação de segredo
+    # --------------------------------------------------------
+
+    if _pedido_explicito_credencial(original):
+        return {
+            "status": "recusado",
+            "motivo": (
+                "Violação de política: tentativa de acesso "
+                "a credencial ou informação confidencial."
+            ),
+            "resposta_segura": None,
+        }
+
+    # --------------------------------------------------------
+    # 2. Exposição de segredo
+    # --------------------------------------------------------
+
+    if _exposicao_credencial(original):
+        return {
+            "status": "recusado",
+            "motivo": (
+                "Violação de política: exposição de credencial "
+                "ou informação confidencial."
+            ),
+            "resposta_segura": None,
+        }
+
+    # --------------------------------------------------------
+    # 3. Menção procedural legítima
+    # --------------------------------------------------------
+
+    if _mencao_procedural_de_senha(original):
+
+        # O guardrail antigo confundia a palavra "senha" com
+        # exposição de credencial. Passamos uma versão neutra
+        # somente para que as OUTRAS verificações continuem ativas.
+        import re
+
+        texto_neutro = re.sub(
+            r"\bsenha\b",
+            "autenticação",
+            original,
+            flags=re.IGNORECASE,
+        )
+
+        resultado = _aplicar_guardrails_lgpd_base(
+            texto_neutro
+        )
+
+        # Se algum OUTRO dado sensível foi detectado,
+        # preservamos a decisão do guardrail original.
+        if resultado.get("status") != "permitido":
+            return resultado
+
+        # Como não havia valor de senha, podemos conservar
+        # a frase original.
+        return {
+            "status": "permitido",
+            "resposta_segura": original,
+        }
+
+    # --------------------------------------------------------
+    # 4. Demais casos usam exatamente o guardrail anterior
+    # --------------------------------------------------------
+
+    return _aplicar_guardrails_lgpd_base(original)
+

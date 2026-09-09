@@ -681,7 +681,7 @@ def gerar_resumo(
         "total_questions": len(resultados),
         "evaluation_status": "completed_with_llm_judge",
         "judge_provider": "Groq",
-        "judge_model": "openai/gpt-oss-120b",
+        "judge_model": "openai/gpt-oss-20b",
         "context_relevance_basis": (
             "expected_sources_proxy_no_ground_truth_chunk_ids"
         ),

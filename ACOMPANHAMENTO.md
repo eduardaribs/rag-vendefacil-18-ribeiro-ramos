@@ -395,3 +395,32 @@ Utilizei IA generativa como apoio para análise dos erros apresentados durante o
 
 Ainda é necessário integrar a avaliação com o LLM-as-judge desenvolvida pelo meu colega para calcular Answer Relevance e Groundedness. Também permanece necessária a confirmação sobre a quantidade oficial de questões do benchmark e sobre a ausência de `expected_chunk_ids` para o cálculo final do Context Relevance.
 
+
+
+---
+
+## 09/09/2026 - Maria Eduarda Ribeiro da Silva
+
+### Relato individual
+
+Hoje concentrei minhas atividades na integração, validação e fechamento da Etapa 4 do Mini Desafio RAG VendeFácil. Retomei a execução do benchmark oficial e acompanhei individualmente as questões que ainda apresentavam falhas de geração, recuperação ou avaliação.
+
+Durante os testes, identifiquei situações em que o problema não estava diretamente no modelo de linguagem, mas na recuperação ou na interpretação dos filtros. A partir desse diagnóstico, revisei o comportamento do Query Analyzer, da recuperação híbrida e dos guardrails. Também trabalhei na geração estruturada para garantir respostas validadas pelo Pydantic e citações literais de evidências.
+
+Um dos ajustes realizados foi no tratamento de credenciais. O sistema precisava diferenciar uma solicitação indevida de senha ou chave secreta de uma simples menção procedimental, como a instrução documentada para que um operador insira a senha do supervisor. Mantive a recusa para pedidos ou exposição de credenciais reais, sem bloquear procedimentos legítimos presentes nos manuais.
+
+Também participei da revisão do benchmark e identifiquei duas limitações importantes no material fornecido. A orientação menciona 20 questões, porém o arquivo oficial contém 24 questões, da Q01 à Q24. Além disso, o arquivo de ground truth não fornece `expected_chunk_ids`, embora a métrica de Context Relevance seja descrita com base na comparação de chunks. Por esse motivo, a implementação registra de forma explícita o uso de `expected_sources` como proxy, sem criar identificadores inexistentes.
+
+Na Q10, verifiquei diretamente os dados de clientes e encontrei divergência entre o ground truth e o arquivo `customers.csv` em relação ao cliente de São Paulo com maior MRR. Optei por preservar a fidelidade aos dados em vez de criar uma regra específica para reproduzir artificialmente o gabarito. Também foi identificada inconsistência semelhante na Q21, cuja política descrita no ground truth não foi localizada no corpus fornecido.
+
+A execução final do benchmark foi realizada utilizando LLM-as-judge para Answer Relevance e Groundedness. O processo foi afetado pelo limite diário de 200.000 tokens da API Groq. Para evitar perda de progresso, utilizei execução por checkpoint no `eval/results.json`, permitindo retomar somente questões e métricas pendentes. O último estado consolidado antes da apresentação apresentou Context Relevance de 0,6833, Answer Relevance de 0,8750, Groundedness de 0,5625 e challenge score médio de 0,6109. Esses valores são parciais, pois algumas questões não puderam ser concluídas devido ao limite da API.
+
+Também revisei a preparação para a defesa técnica, incluindo arquitetura, recuperação híbrida, filtros, guardrails, saída estruturada, limitações encontradas e exemplos seguros para a demonstração ao vivo.
+
+### Uso de IA
+
+Utilizei IA como apoio para análise de erros, revisão de código, interpretação dos logs do benchmark, elaboração de testes de regressão e organização da documentação. As sugestões geradas foram avaliadas antes de serem aplicadas. Entre as alterações que partiram dessa análise estão o refinamento da geração estruturada, o tratamento de credenciais nos guardrails, a retomada segura do benchmark por checkpoint e a revisão das rubricas do LLM-as-judge.
+
+### Pendências
+
+A execução integral das 24 questões do benchmark permanece dependente da liberação da cota diária da API Groq. Caso haja extensão do prazo, pretendo retomar o benchmark a partir do checkpoint existente, sem refazer as questões já concluídas.
