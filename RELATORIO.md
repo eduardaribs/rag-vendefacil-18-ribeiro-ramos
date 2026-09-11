@@ -159,55 +159,59 @@ Enquanto essa interpretação não é confirmada, a implementação parcial util
 
 ## 7. RAG Triad
 
-A avaliação final considera três dimensões.
+A avaliação considera três dimensões complementares.
 
 ### 7.1 Context Relevance
 
-Avalia a relevância do contexto recuperado para a pergunta.
+Avalia se o contexto recuperado contém evidências relevantes para responder à pergunta.
 
-**Status:** implementação parcial disponível.
+Como o benchmark oficial não fornece `expected_chunk_ids`, embora a especificação da atividade mencione comparação por `chunk_id`, a implementação registra de forma explícita uma aproximação baseada em `expected_sources`.
 
-**Resultado final:** PENDENTE.
+**Resultado parcial:** `0,6833`.
 
 ### 7.2 Answer Relevance
 
-Avalia se a resposta gerada responde adequadamente à pergunta.
+Avalia se a resposta gerada atende ao que foi solicitado na pergunta.
 
-A avaliação será realizada por LLM-as-judge utilizando a rubrica definida em `eval/judge_prompt.py`.
+A métrica foi integrada utilizando LLM-as-judge com a rubrica definida em `eval/judge_prompt.py`.
 
-**Resultado:** PENDENTE DE INTEGRAÇÃO DO JUDGE.
+**Resultado parcial:** `0,8750`.
 
 ### 7.3 Groundedness
 
-Avalia se as afirmações da resposta são sustentadas pelas evidências recuperadas.
+Avalia se as afirmações presentes na resposta estão sustentadas pelo contexto fornecido ao modelo.
 
-Também será calculada por LLM-as-judge.
+A métrica também foi integrada por meio de LLM-as-judge.
 
-**Resultado:** PENDENTE DE INTEGRAÇÃO DO JUDGE.
+**Resultado parcial:** `0,5625`.
+
+Os valores são parciais porque a execução integral das 24 questões foi interrompida pelo limite de tokens da API Groq.
 
 ---
 
 ## 8. Resultados do Benchmark
 
-Esta seção será atualizada após a execução final do benchmark integrado ao LLM-as-judge.
+A última execução consolidada antes da apresentação produziu resultados parciais. A execução utiliza checkpoints em `eval/results.json`, evitando a perda das avaliações já concluídas.
 
-| Métrica | Resultado |
+| Métrica | Resultado parcial |
 |---|---:|
-| Context Relevance | PENDENTE |
-| Answer Relevance | PENDENTE |
-| Groundedness | PENDENTE |
-| Hit Rate / Pontuação geral | PENDENTE |
+| Context Relevance | 0,6833 |
+| Answer Relevance | 0,8750 |
+| Groundedness | 0,5625 |
+| Challenge Score médio | 0,6109 |
 
-### Resultado por categoria
+### Resultado parcial por categoria
 
-| Categoria | Nº de questões | Resultado |
-|---|---:|---:|
-| Fácil — RAG Básico | PENDENTE | PENDENTE |
-| Filtragem por Metadados | PENDENTE | PENDENTE |
-| Múltiplas Fontes | PENDENTE | PENDENTE |
-| Razão e Solução de Problemas | PENDENTE | PENDENTE |
-| Guardrails e LGPD | PENDENTE | PENDENTE |
-| Políticas Internas | PENDENTE | PENDENTE |
+| Categoria | Context Relevance | Answer Relevance | Groundedness | Challenge Score |
+|---|---:|---:|---:|---:|
+| Fácil (RAG Básico) | 0,8750 | 1,0000 | 1,0000 | 0,9625 |
+| Filtragem por Metadados | 0,8333 | 0,6667 | 0,3333 | 0,7833 |
+| Múltiplas Fontes (Multi-hop) | 0,6389 | 0,6667 | 1,0000 | 0,3917 |
+| Razão & Solução de Problemas | 0,3333 | 1,0000 | 0,0000 | 0,8000 |
+| Guardrails & LGPD | 0,5000 | 1,0000 | 0,2000 | 0,3200 |
+| Políticas Internas | não consolidado | não consolidado | não consolidado | não consolidado |
+
+Os resultados acima não representam a conclusão integral das 24 questões e devem ser interpretados considerando as questões efetivamente processadas em cada categoria.
 
 ---
 
@@ -221,34 +225,32 @@ A pontuação prevista por questão considera:
 
 A pontuação máxima é `1,0` por questão.
 
-Os resultados serão preenchidos após a execução final do benchmark.
+O Challenge Score médio parcial obtido na última execução consolidada foi `0,6109`. Esse valor não deve ser interpretado como pontuação definitiva, pois algumas questões ainda não haviam sido concluídas quando a cota da API foi atingida.
 
 ---
 
 ## 10. Principais Falhas
 
-Os três piores casos serão selecionados após a execução completa do benchmark.
+Foram selecionados três casos relevantes para diagnóstico, considerando recuperação, geração e execução da avaliação.
 
-### Falha 1
+### Falha 1 — Q08: recuperação multi-hop
 
-- **Questão:** PENDENTE
-- **Problema:** PENDENTE
-- **Diagnóstico:** PENDENTE
-- **Melhoria proposta:** PENDENTE
+- **Problema:** a resposta utilizou evidências recuperadas, mas não reuniu todas as informações necessárias para responder completamente à pergunta.
+- **Diagnóstico:** limitação na recuperação de evidências distribuídas entre múltiplas fontes.
+- **Evidência diagnóstica:** Groundedness igual a 1 na execução analisada, mas Answer Relevance igual a 0.
+- **Melhoria proposta:** decompor a pergunta em subconsultas, recuperar documentos para cada parte e agregar as evidências antes da geração.
 
-### Falha 2
+### Falha 2 — Q11: Groundedness sensível ao contexto
 
-- **Questão:** PENDENTE
-- **Problema:** PENDENTE
-- **Diagnóstico:** PENDENTE
-- **Melhoria proposta:** PENDENTE
+- **Problema:** a resposta foi considerada relevante, mas o judge avaliou que nem todas as afirmações estavam completamente sustentadas pelo contexto da execução consolidada.
+- **Diagnóstico:** Answer Relevance igual a 1 e Groundedness igual a 0 demonstram que relevância da resposta e sustentação documental são dimensões diferentes.
+- **Melhoria proposta:** melhorar a composição do contexto recuperado e reforçar a seleção de evidências necessárias para cada afirmação da resposta.
 
-### Falha 3
+### Falha 3 — Q06: execução não consolidada
 
-- **Questão:** PENDENTE
-- **Problema:** PENDENTE
-- **Diagnóstico:** PENDENTE
-- **Melhoria proposta:** PENDENTE
+- **Problema:** a questão permaneceu sem resposta válida consolidada no checkpoint utilizado antes da apresentação.
+- **Diagnóstico:** trata-se de uma pendência operacional de execução, e não de uma falha definitiva já confirmada do pipeline.
+- **Melhoria proposta:** retomar somente essa questão a partir do checkpoint em uma nova janela de cota da API e então diagnosticar recuperação, geração e avaliação separadamente.
 
 ---
 
@@ -309,9 +311,9 @@ Até o momento, o sistema apresenta funcionamento integrado entre ingestão, rec
 
 Os testes funcionais demonstraram comportamento adequado tanto em consultas respondíveis pela base quanto em situações que exigem recusa.
 
-A conclusão quantitativa da Etapa 4 depende da execução final do benchmark com as três dimensões da RAG Triad e da integração do LLM-as-judge.
+A integração das três dimensões da RAG Triad e do LLM-as-judge foi concluída. A última execução consolidada gerou métricas parciais, resultados por categoria e diagnósticos das principais falhas.
 
-Após essa integração, este relatório deverá ser atualizado com os resultados gerais, resultados por categoria, pontuação final, três principais falhas, diagnóstico dessas falhas e priorização das melhorias.
+A avaliação quantitativa permanece parcial porque o arquivo oficial contém 24 questões e algumas delas não puderam ser concluídas antes do limite de tokens da API Groq. O estado já processado foi preservado em `eval/results.json`, permitindo continuidade sem repetir as avaliações concluídas.
 
 
 ---

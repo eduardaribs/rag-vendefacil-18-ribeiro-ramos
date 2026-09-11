@@ -329,7 +329,7 @@ Utilizei o ChatGPT como apoio na implementação e revisão da geração estrutu
 
 ### Relato individual - Maria Eduarda Ribeiro da Silva
 
-Neste encontro, implementei o arquivo `eval/run_benchmark.py` e a métrica de **Context Relevance**, comparando os `chunk_id` recuperados pelo sistema com os `chunk_id` esperados no ground truth. Também validei o funcionamento da métrica com testes isolados e confirmei o funcionamento da recuperação híbrida com o índice FAISS.
+Neste encontro, implementei o arquivo `eval/run_benchmark.py` e preparei a lógica de **Context Relevance** conforme a especificação da atividade, que previa a comparação entre os `chunk_id` recuperados e os `chunk_id` esperados no ground truth. Também validei o funcionamento da estrutura da métrica com testes isolados e confirmei o funcionamento da recuperação híbrida com o índice FAISS. Posteriormente, após a disponibilização e inspeção do benchmark oficial, constatamos que o arquivo fornecido não contém `expected_chunk_ids`; por isso, a implementação final passou a registrar explicitamente `expected_sources` como proxy, sem criar identificadores inexistentes.
 
 Utilizei o ChatGPT como apoio na estruturação do benchmark, revisão da lógica do Context Relevance e resolução de problemas de ambiente e importação no Google Colab. As sugestões foram testadas antes do envio ao repositório.
 
@@ -339,11 +339,11 @@ A execução completa das 20 questões ainda ficou pendente porque o arquivo ofi
 
 Neste encontro, cumpri as minhas atribuições iniciais da Etapa 4, seguindo a divisão de tarefas:
 
-* **Implementar Answer Relevance com LLM-as-judge** e **Implementar Groundedness com LLM-as-judge**[cite: 1]: Atualizei o arquivo `judge.py` para utilizar a SDK moderna `google-genai` com o modelo Gemini 3.6 Flash.
-* **Testar o judge com respostas reais**[cite: 1]: Validei o funcionamento do juiz no Colab, obtendo sucesso nos testes de cenários com respostas corretas, evasivas, fundamentadas e alucinadas.
-* **Criar a interface em app/** e **Testar a interface**[cite: 1]: Construí o arquivo `app/app.py` utilizando a biblioteca Gradio para gerar a interface visual do chatbot. Testei a aplicação gerando um link público e deixei uma função *mock* (simulada) preparada para receber o motor de recuperação.
-* **Fazer commit e push da implementação dele**[cite: 1]: Adicionei as dependências `google-genai` e `gradio` ao `requirements.txt` sem afetar o trabalho da colega e fiz o envio de toda a minha estrutura (juiz e interface) para as respectivas pastas no GitHub.
-* **Escrever o relato individual dele no ACOMPANHAMENTO.md**[cite: 1]: Relato atualizado. Fico no aguardo da finalização do pipeline de recuperação para iniciarmos a etapa de "Integrar as métricas do Eridalgo ao run_benchmark.py"[cite: 1].
+* **Implementar Answer Relevance com LLM-as-judge** e **Implementar Groundedness com LLM-as-judge**: Atualizei o arquivo `judge.py` para utilizar a SDK moderna `google-genai` com o modelo Gemini 3.6 Flash.
+* **Testar o judge com respostas reais**: Validei o funcionamento do juiz no Colab, obtendo sucesso nos testes de cenários com respostas corretas, evasivas, fundamentadas e alucinadas.
+* **Criar a interface em app/** e **Testar a interface**: Construí o arquivo `app/app.py` utilizando a biblioteca Gradio para gerar a interface visual do chatbot. Testei a aplicação gerando um link público e deixei uma função *mock* (simulada) preparada para receber o motor de recuperação.
+* **Fazer commit e push da implementação dele**: Adicionei as dependências `google-genai` e `gradio` ao `requirements.txt` sem afetar o trabalho da colega e fiz o envio de toda a minha estrutura (juiz e interface) para as respectivas pastas no GitHub.
+* **Escrever o relato individual dele no ACOMPANHAMENTO.md**: Relato atualizado. Fico no aguardo da finalização do pipeline de recuperação para iniciarmos a etapa de "Integrar as métricas do Eridalgo ao run_benchmark.py".
 
 ### Resumo do dia (escrito em conjunto)
 

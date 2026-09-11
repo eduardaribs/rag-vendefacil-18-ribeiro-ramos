@@ -452,7 +452,7 @@ O relatório contempla:
 - possíveis melhorias;
 - análise do que poderia ser realizado com mais quatro horas.
 
-As métricas dependentes da execução final do benchmark devem ser preenchidas somente após a integração completa da avaliação.
+A integração com o LLM-as-judge foi concluída e há resultados parciais preservados em `eval/results.json`. A execução integral do benchmark não foi concluída devido ao limite de uso da API Groq, portanto as métricas atualmente documentadas devem ser interpretadas como parciais.
 
 ---
 
@@ -473,7 +473,9 @@ Não devem ser versionados:
 - arquivos `.env` com credenciais;
 - índice FAISS gerado localmente;
 - arquivos temporários;
-- resultados parciais que ainda não representam a avaliação final.
+- arquivos temporários de execução não necessários ao projeto.
+
+O arquivo `eval/results.json` é mantido no repositório como checkpoint documentado da avaliação, permitindo preservar os resultados já concluídos e retomar somente as questões pendentes.
 
 Os dados originais fornecidos para a atividade devem permanecer inalterados.
 
@@ -508,16 +510,28 @@ Os dados originais fornecidos para a atividade devem permanecer inalterados.
 - interface Streamlit;
 - estrutura de execução do benchmark.
 
-### Em finalização
+### Estado atual da avaliação
 
-- integração final do LLM-as-judge;
-- Answer Relevance;
-- Groundedness;
-- consolidação do Context Relevance;
-- execução final do benchmark;
-- geração final do `results.json`;
-- análise dos três principais casos de falha;
-- atualização das métricas no `RELATORIO.md`.
+- LLM-as-judge integrado ao pipeline de avaliação;
+- Answer Relevance implementado;
+- Groundedness implementado;
+- Context Relevance calculado utilizando `expected_sources` como proxy explicitamente identificado, pois o benchmark fornecido não contém `expected_chunk_ids`;
+- `eval/results.json` utilizado como checkpoint da execução;
+- métricas parciais consolidadas no `RELATORIO.md`;
+- três casos de falha analisados e diagnosticados;
+- interface Streamlit integrada ao pipeline real e testada;
+- execução integral das 24 questões ainda pendente devido ao limite de tokens da API Groq.
+
+Último estado consolidado antes da apresentação:
+
+| Métrica | Resultado parcial |
+|---|---:|
+| Context Relevance | 0,6833 |
+| Answer Relevance | 0,8750 |
+| Groundedness | 0,5625 |
+| Challenge Score médio | 0,6109 |
+
+Esses valores são parciais e não representam a conclusão integral das 24 questões existentes no arquivo oficial.
 
 ---
 
